@@ -16,7 +16,7 @@ func main() {
 	fSamples := flag.Int64("samples", 100, "number of samples to take")
 	fRpc := flag.String("rpc", "https://main.rpc.agoric.net:443", "the rpc endpoint to sample from")
 	fThreads := flag.Int64("threads", 6, "number of threads to use")
-	fStatmode := flag.String("statmode", "average", "statmode: average or median")
+	fStatmode := flag.String("statmode", "mean", "statmode: mean or median")
 	fTimezones := flag.String("timezones", "Local,UTC,Asia/Tokyo,Australia/NSW,Asia/Istanbul,US/Pacific,US/Eastern", "comma-separated list of timezones")
 	flag.Parse()
 
@@ -29,7 +29,7 @@ func main() {
 		fmt.Println("samples must be positive")
 		return
 	}
-	statmode := estimator.STATMODE_AVERAGE
+	statmode := estimator.STATMODE_MEAN
 	if *fStatmode == "median" {
 		statmode = estimator.STATMODE_MEDIAN
 	}

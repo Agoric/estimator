@@ -24,7 +24,7 @@ type Estimator struct {
 type StatMode int
 
 const (
-	STATMODE_AVERAGE StatMode = iota
+	STATMODE_MEAN StatMode = iota
 	STATMODE_MEDIAN
 )
 
@@ -134,13 +134,13 @@ func (e *Estimator) getAvgBlockDurationNanos() (time.Duration, error) {
 		deltas[i-1] = time.Duration(diff)
 	}
 	switch e.Statmode {
-	case STATMODE_AVERAGE:
+	case STATMODE_MEAN:
 		sumDur := time.Duration(0)
 		for i := 0; i < len(deltas); i++ {
 			sumDur += deltas[i]
 		}
 		avgDur := time.Duration(sumDur.Nanoseconds() / int64(len(deltas)))
-		fmt.Printf("Average Block Time: %fs (%d samples)\n", avgDur.Seconds(), e.Samples)
+		fmt.Printf("Mean Block Time: %fs (%d samples)\n", avgDur.Seconds(), e.Samples)
 		return avgDur, nil
 	case STATMODE_MEDIAN:
 		medianBlockTime := time.Duration(median(deltas))
