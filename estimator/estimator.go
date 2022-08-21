@@ -6,6 +6,8 @@ import (
 	"github.com/gammazero/workerpool"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/schollz/progressbar/v3"
+	"golang.org/x/exp/constraints"
+	"golang.org/x/exp/slices"
 	"io/ioutil"
 	"log"
 	"strconv"
@@ -14,10 +16,17 @@ import (
 )
 
 type Estimator struct {
-	Samples int64
-	RPC     string
-	Threads int64
+	Samples  int64
+	RPC      string
+	Threads  int64
+	Statmode StatMode
 }
+type StatMode int
+
+const (
+	STATMODE_AVERAGE StatMode = iota
+	STATMODE_MEDIAN
+)
 
 var hClient = retryablehttp.NewClient()
 
@@ -25,6 +34,28 @@ func init() {
 	hClient.Logger = log.New(ioutil.Discard, "", log.LstdFlags)
 }
 
+type Number interface {
+	constraints.Float | constraints.Integer
+}
+
+func median[T Number](data []T) float64 {
+	dataCopy := make([]T, len(data))
+	copy(dataCopy, data)
+
+	slices.Sort(dataCopy)
+
+	var median float64
+	l := len(dataCopy)
+	if l == 0 {
+		return 0
+	} else if l%2 == 0 {
+		median = float64((dataCopy[l/2-1] + dataCopy[l/2]) / 2.0)
+	} else {
+		median = float64(dataCopy[l/2])
+	}
+
+	return median
+}
 func (e *Estimator) getCurHeight() (int64, error) {
 
 	resp, err := hClient.Get(fmt.Sprintf("%s/status", e.RPC))
@@ -102,14 +133,24 @@ func (e *Estimator) getAvgBlockDurationNanos() (time.Duration, error) {
 		diff := resultSamples[i-1].UnixNano() - resultSamples[i].UnixNano()
 		deltas[i-1] = time.Duration(diff)
 	}
-	sumDur := time.Duration(0)
-	for i := 0; i < len(deltas); i++ {
-		sumDur += deltas[i]
+	switch e.Statmode {
+	case STATMODE_AVERAGE:
+		sumDur := time.Duration(0)
+		for i := 0; i < len(deltas); i++ {
+			sumDur += deltas[i]
+		}
+		avgDur := time.Duration(sumDur.Nanoseconds() / int64(len(deltas)))
+		fmt.Printf("Average Block Time: %fs (%d samples)\n", avgDur.Seconds(), e.Samples)
+		return avgDur, nil
+	case STATMODE_MEDIAN:
+		medianBlockTime := time.Duration(median(deltas))
+		fmt.Printf("Median Block Time: %fs (%d samples)\n", medianBlockTime.Seconds(), e.Samples)
+		return medianBlockTime, nil
+	default:
+		return 0, fmt.Errorf("invalid statmode")
 	}
-	avgDur := time.Duration(sumDur.Nanoseconds() / int64(len(deltas)))
-	fmt.Printf("Average Block Time: %fs (%d samples)\n", avgDur.Seconds(), e.Samples)
-	return avgDur, nil
 }
+
 func (e *Estimator) CalcBlock(ttime time.Time) (int64, error) {
 	if ttime.Unix() <= time.Now().Unix() {
 		return 0, fmt.Errorf("time to estimate is < less than the current time")
