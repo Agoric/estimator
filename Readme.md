@@ -6,16 +6,19 @@ Usage:
 
 ## Height estimation at future date
 ```shell
-% go run main.go -date "Aug 21, 2023 1:23PM PDT" -rpc https://main.rpc.agoric.net:443 -samples 500
+go run main.go -date "Aug 21, 2023 1:23PM PDT" -rpc https://main.rpc.agoric.net:443 -samples 500
+```
+```console
  100% |███████████████████████████████████████████████████████| (100/100, 71 it/s)        
 
 Estimated block height at Mon Aug 21 13:23:00 PDT 2023 is 11234156
 ```
 
 ## Date estimation at future height
-
 ```shell
-% go run main.go -height 11260923 -rpc https://main.rpc.agoric.net:443 -samples 1000           
+go run main.go -height 11260923 -rpc https://main.rpc.agoric.net:443 -samples 1000
+```
+```console
  100% |██████████████████████████████████████████████████████| (1000/1000, 71 it/s)         
 
 Average Block Time: 6.291125s (1000 samples)
