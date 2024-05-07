@@ -1,12 +1,14 @@
 package main
 
 import (
-	"estimator/estimator"
 	"flag"
 	"fmt"
-	"github.com/araddon/dateparse"
 	"strings"
 	"time"
+
+	"estimator/estimator"
+
+	"github.com/araddon/dateparse"
 )
 
 func main() {

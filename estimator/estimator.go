@@ -3,16 +3,17 @@ package estimator
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/gammazero/workerpool"
-	"github.com/hashicorp/go-retryablehttp"
-	"github.com/schollz/progressbar/v3"
-	"golang.org/x/exp/constraints"
-	"golang.org/x/exp/slices"
 	"io/ioutil"
 	"log"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/gammazero/workerpool"
+	"github.com/hashicorp/go-retryablehttp"
+	"github.com/schollz/progressbar/v3"
+	"golang.org/x/exp/constraints"
+	"golang.org/x/exp/slices"
 )
 
 type Estimator struct {
