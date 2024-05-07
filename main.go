@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -11,30 +12,31 @@ import (
 	"github.com/araddon/dateparse"
 )
 
-func main() {
-
+func run() (exitStatus int, err error) {
 	fHeight := flag.Int64("height", 0, "specific height to estimate the time of")
 	fDate := flag.String("date", "", "specific time to estimate height at, e.g. Mon Jan 2 15:04:05 MST 2006")
-	fSamples := flag.Int64("samples", 100, "number of samples to take")
+	fSamples := flag.Int64("samples", 100, "count of samples to take")
 	fRpc := flag.String("rpc", "https://main.rpc.agoric.net:443", "the rpc endpoint to sample from")
 	fVotingPeriod := flag.Duration("votingPeriod", 24*3*time.Hour, "the voting period of the destination chain")
 	fThreads := flag.Int64("threads", 6, "number of threads to use")
-	fStatmode := flag.String("statmode", "mean", "statmode: mean or median")
+	fStatmode := flag.String("statmode", "mean", `how to estimate from past blocks, "mean" or "median"`)
 	fTimezones := flag.String("timezones", "Local,UTC,Asia/Tokyo,Australia/NSW,Asia/Istanbul,US/Pacific,US/Eastern", "comma-separated list of timezones")
 	flag.Parse()
 
 	if *fHeight > 0 && *fDate != "" {
-		fmt.Println("must specify either height or date estimation")
-		return
+		return 64, fmt.Errorf("must not specify both height and date")
 	}
 
 	if *fSamples <= 0 {
-		fmt.Println("samples must be positive")
-		return
+		return 1, fmt.Errorf("sample count must be positive")
 	}
-	statmode := estimator.STATMODE_MEAN
-	if *fStatmode == "median" {
-		statmode = estimator.STATMODE_MEDIAN
+	statmodes := map[string]estimator.StatMode{
+		"mean":   estimator.STATMODE_MEAN,
+		"median": estimator.STATMODE_MEDIAN,
+	}
+	statmode, statmodeOk := statmodes[*fStatmode]
+	if !statmodeOk {
+		return 1, fmt.Errorf("invalid statmode")
 	}
 	esti := estimator.Estimator{
 		Samples:  *fSamples,
@@ -43,57 +45,66 @@ func main() {
 		Statmode: statmode,
 	}
 
+	var timeRemaining time.Duration
 	if *fHeight > 0 {
 		estTime, err := esti.CalcDate(*fHeight)
 		if err != nil {
-			fmt.Println(err.Error())
-			return
+			return 1, err
 		}
-		if time.Duration(estTime.UnixNano()-time.Now().UnixNano()) < *fVotingPeriod+time.Hour {
-			fmt.Println("****** WARNING ******")
-			fmt.Println("The Date above is before the voting period ends")
-			fmt.Println(time.Duration(estTime.UnixNano() - time.Now().UnixNano()).String())
-			fmt.Println("****** WARNING ******")
-		}
+
+		timeRemaining = time.Until(estTime)
 
 		fmt.Printf("Estimated time for height %d:\n", *fHeight)
 		tzs := strings.Split(*fTimezones, ",")
-		ml := 0
+		width := 0
 		for _, tz := range tzs {
-			if len(tz) >= ml {
-				ml = len(tz)
+			if len(tz) > width {
+				width = len(tz)
 			}
 		}
 		for _, tz := range tzs {
 			loc, err := time.LoadLocation(tz)
 			if err != nil {
-				fmt.Println("unable to find timezone", tz)
+				fmt.Printf("unable to find timezone %q\n", tz)
 			} else {
-				fmt.Printf("%"+fmt.Sprintf("%d", ml)+"s: %s\n", tz, estTime.In(loc).Format(time.UnixDate))
+				fmt.Printf("%*s: %s\n", width, tz, estTime.In(loc).Format(time.UnixDate))
 			}
 		}
 	} else if *fDate != "" {
 		date, err := dateparse.ParseLocal(*fDate)
 		if err != nil {
-			fmt.Println(err.Error())
-			return
+			return 1, err
 		}
+
+		timeRemaining = time.Until(date)
 
 		estBlock, err := esti.CalcBlock(date)
 		if err != nil {
-			fmt.Println(err.Error())
-			return
+			return 1, err
 		}
 
-		if time.Duration(date.UnixNano()-time.Now().UnixNano()) < *fVotingPeriod+time.Hour {
-			fmt.Println("****** WARNING ******")
-			fmt.Println("The Date above is before the voting period ends")
-			fmt.Println(time.Duration(date.UnixNano() - time.Now().UnixNano()).String())
-			fmt.Println("****** WARNING ******")
-		}
-
-		fmt.Println("Estimated block height at", date.Format(time.UnixDate), "is", estBlock)
+		fmt.Printf("Estimated block height at %s is %v\n", date.Format(time.UnixDate), estBlock)
 	} else {
-		fmt.Println("Must provide either a -height or a -date to estimate")
+		fmt.Fprintln(os.Stderr, "must specify either a height or a date")
+		flag.PrintDefaults()
+		return 64, nil
+	}
+
+	if timeRemaining < *fVotingPeriod+time.Hour {
+		fmt.Println("****** WARNING ******")
+		fmt.Println("Insufficient time for voting period:", timeRemaining)
+		fmt.Println("****** WARNING ******")
+	}
+
+	return 0, nil
+}
+
+func main() {
+	exitStatus, err := run()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
+	if exitStatus != 0 {
+		os.Exit(exitStatus)
 	}
 }

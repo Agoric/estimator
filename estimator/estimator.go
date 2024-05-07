@@ -65,7 +65,7 @@ func (e *Estimator) getCurHeight() (int64, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return 0, fmt.Errorf("invalid status %d", resp.StatusCode)
+		return 0, fmt.Errorf("unexpected /status response status code %d", resp.StatusCode)
 	}
 
 	var statusResp StatusResponse
@@ -88,7 +88,7 @@ func (e *Estimator) getBlockTime(height int64) (time.Time, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return time.Now(), fmt.Errorf("invalid status %d", resp.StatusCode)
+		return time.Now(), fmt.Errorf("unexpected /block response status code %d", resp.StatusCode)
 	}
 
 	var blockResp BlockResponse
@@ -154,7 +154,7 @@ func (e *Estimator) getAvgBlockDurationNanos() (time.Duration, error) {
 
 func (e *Estimator) CalcBlock(ttime time.Time) (int64, error) {
 	if ttime.Unix() <= time.Now().Unix() {
-		return 0, fmt.Errorf("time to estimate is < less than the current time")
+		return 0, fmt.Errorf("date to estimate must be in the future")
 	}
 	avgTime, _ := e.getAvgBlockDurationNanos()
 
@@ -168,13 +168,12 @@ func (e *Estimator) CalcBlock(ttime time.Time) (int64, error) {
 	return curHeight2 + estimatedBlocks, nil
 }
 func (e *Estimator) CalcDate(height int64) (time.Time, error) {
-
 	curHeight, err := e.getCurHeight()
 	if err != nil {
 		return time.Now(), err
 	}
 	if height <= curHeight {
-		return time.Now(), fmt.Errorf("height to estimate (%d) is < current height of %d", height, curHeight)
+		return time.Now(), fmt.Errorf("height to estimate must be greater than current height %d", curHeight)
 	}
 	avgTime, _ := e.getAvgBlockDurationNanos()
 
