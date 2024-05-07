@@ -152,8 +152,8 @@ func (e *Estimator) getAvgBlockDurationNanos() (time.Duration, error) {
 	}
 }
 
-func (e *Estimator) CalcBlock(ttime time.Time) (int64, error) {
-	if ttime.Unix() <= time.Now().Unix() {
+func (e *Estimator) CalcBlock(date time.Time) (int64, error) {
+	if date.Unix() <= time.Now().Unix() {
 		return 0, fmt.Errorf("date to estimate must be in the future")
 	}
 	avgTime, _ := e.getAvgBlockDurationNanos()
@@ -163,7 +163,7 @@ func (e *Estimator) CalcBlock(ttime time.Time) (int64, error) {
 		return 0, err
 	}
 
-	estimatedBlocks := ttime.Sub(time.Now()).Nanoseconds() / avgTime.Nanoseconds()
+	estimatedBlocks := time.Until(date).Nanoseconds() / avgTime.Nanoseconds()
 
 	return curHeight2 + estimatedBlocks, nil
 }
