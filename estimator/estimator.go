@@ -111,19 +111,20 @@ func (e *Estimator) getAvgBlockDurationNanos() (time.Duration, error) {
 		return 0, err
 	}
 	bar := progressbar.Default(e.Samples)
-
-	for i := int64(0); i <= e.Samples; i++ {
-		i := i
-		wp.Submit(func() {
-			blockToQuery := curHeight - i
+	makeQuerier := func(sink []time.Time, i int64, blockToQuery int64, bar *progressbar.ProgressBar) func() {
+		return func() {
 			blockHeight, err := e.getBlockTime(blockToQuery)
 			if err == nil {
 				mut.Lock()
-				resultSamples[i] = blockHeight
+				sink[i] = blockHeight
 				mut.Unlock()
 			}
 			bar.Add(1)
-		})
+		}
+	}
+
+	for i := int64(0); i <= e.Samples; i++ {
+		wp.Submit(makeQuerier(resultSamples, i, curHeight-i, bar))
 	}
 	wp.StopWait()
 	bar.Finish()
