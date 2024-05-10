@@ -102,54 +102,64 @@ func (e *Estimator) getBlockTime(height int64) (time.Time, error) {
 }
 
 func (e *Estimator) getAvgBlockDurationNanos() (time.Duration, error) {
-	wp := workerpool.New(int(e.Threads))
-	mut := sync.Mutex{}
-	resultSamples := make([]time.Time, e.Samples+1)
-
 	curHeight, err := e.getCurHeight()
 	if err != nil {
 		return 0, err
 	}
-	bar := progressbar.Default(e.Samples)
 
-	for i := int64(0); i <= e.Samples; i++ {
-		i := i
-		wp.Submit(func() {
-			blockToQuery := curHeight - i
-			blockHeight, err := e.getBlockTime(blockToQuery)
+	var statmodeDesc string
+	var avgDur time.Duration
+	wp := workerpool.New(int(e.Threads))
+	mut := sync.Mutex{}
+	makeQuerier := func(sink []time.Time, i int, blockHeight int64, bar *progressbar.ProgressBar) func() {
+		return func() {
+			blockTime, err := e.getBlockTime(blockHeight)
 			if err == nil {
 				mut.Lock()
-				resultSamples[i] = blockHeight
+				sink[i] = blockTime
 				mut.Unlock()
 			}
-			bar.Add(1)
-		})
-	}
-	wp.StopWait()
-	bar.Finish()
-	fmt.Println("")
-
-	deltas := make([]time.Duration, e.Samples)
-	for i := 1; i < len(resultSamples); i++ {
-		diff := resultSamples[i-1].UnixNano() - resultSamples[i].UnixNano()
-		deltas[i-1] = time.Duration(diff)
+			if bar != nil {
+				bar.Add(1)
+			}
+		}
 	}
 	switch e.Statmode {
 	case STATMODE_MEAN:
-		sumDur := time.Duration(0)
-		for i := 0; i < len(deltas); i++ {
-			sumDur += deltas[i]
+		// Estimate from just the two endpoints.
+		statmodeDesc = "Mean"
+		resultSamples := make([]time.Time, 2)
+		for i, height := range []int64{curHeight - e.Samples, curHeight} {
+			wp.Submit(makeQuerier(resultSamples, i, height, nil))
 		}
-		avgDur := time.Duration(sumDur.Nanoseconds() / int64(len(deltas)))
-		fmt.Printf("Mean Block Time: %fs (%d samples)\n", avgDur.Seconds(), e.Samples)
-		return avgDur, nil
+		wp.StopWait()
+		totalNanoseconds := resultSamples[1].UnixNano() - resultSamples[0].UnixNano()
+		avgDur = time.Duration(totalNanoseconds / e.Samples)
 	case STATMODE_MEDIAN:
-		medianBlockTime := time.Duration(median(deltas))
-		fmt.Printf("Median Block Time: %fs (%d samples)\n", medianBlockTime.Seconds(), e.Samples)
-		return medianBlockTime, nil
+		// Take the necessary samples, starting at current height and moving backwards.
+		statmodeDesc = "Median"
+		resultSamples := make([]time.Time, e.Samples+1)
+		bar := progressbar.Default(e.Samples)
+		for i := int64(0); i <= e.Samples; i++ {
+			wp.Submit(makeQuerier(resultSamples, int(i), curHeight-i, bar))
+		}
+		wp.StopWait()
+		bar.Finish()
+		fmt.Println("")
+
+		// Calculate deltas and take the median.
+		deltas := make([]time.Duration, e.Samples)
+		for i := 1; i < len(resultSamples); i++ {
+			diff := resultSamples[i-1].UnixNano() - resultSamples[i].UnixNano()
+			deltas[i-1] = time.Duration(diff)
+		}
+		avgDur = time.Duration(median(deltas))
 	default:
 		return 0, fmt.Errorf("invalid statmode")
 	}
+
+	fmt.Printf("%s Block Time: %fs (%d samples)\n", statmodeDesc, avgDur.Seconds(), e.Samples)
+	return avgDur, nil
 }
 
 func (e *Estimator) CalcBlock(date time.Time) (int64, error) {
