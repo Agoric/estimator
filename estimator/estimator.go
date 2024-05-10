@@ -111,12 +111,12 @@ func (e *Estimator) getAvgBlockDurationNanos() (time.Duration, error) {
 		return 0, err
 	}
 	bar := progressbar.Default(e.Samples)
-	makeQuerier := func(sink []time.Time, i int64, blockToQuery int64, bar *progressbar.ProgressBar) func() {
+	makeQuerier := func(sink []time.Time, i int64, blockHeight int64, bar *progressbar.ProgressBar) func() {
 		return func() {
-			blockHeight, err := e.getBlockTime(blockToQuery)
+			blockTime, err := e.getBlockTime(blockHeight)
 			if err == nil {
 				mut.Lock()
-				sink[i] = blockHeight
+				sink[i] = blockTime
 				mut.Unlock()
 			}
 			bar.Add(1)
