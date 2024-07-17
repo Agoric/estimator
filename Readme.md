@@ -9,8 +9,7 @@ Usage:
 go run main.go -date "Aug 21, 2023 1:23PM PDT" -rpc https://main.rpc.agoric.net:443 -samples 500
 ```
 ```console
- 100% |███████████████████████████████████████████████████████| (100/100, 71 it/s)        
-
+Mean Block Time: 6.243974s (500 samples)
 Estimated block height at Mon Aug 21 13:23:00 PDT 2023 is 11234156
 ```
 
@@ -19,9 +18,7 @@ Estimated block height at Mon Aug 21 13:23:00 PDT 2023 is 11234156
 go run main.go -height 11260923 -rpc https://main.rpc.agoric.net:443 -samples 1000
 ```
 ```console
- 100% |██████████████████████████████████████████████████████| (1000/1000, 71 it/s)         
-
-Average Block Time: 6.291125s (1000 samples)
+Mean Block Time: 6.291125s (1000 samples)
 Estimated time for height 11260923:
         Local: Mon Aug 21 06:01:08 PDT 2023
           UTC: Mon Aug 21 13:01:08 UTC 2023
