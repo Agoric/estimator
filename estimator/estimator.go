@@ -195,3 +195,106 @@ func (e *Estimator) CalcDate(height int64) (time.Time, error) {
 
 	return time.Now().Add(gapTime), nil
 }
+
+func (e *Estimator) CalcDateWithOffset(height int64, offset time.Duration) (time.Time, error) {
+	curHeight, err := e.getCurHeight()
+	if err != nil {
+		return time.Time{}, err
+	}
+	if height <= curHeight {
+		return time.Time{}, fmt.Errorf("height to estimate must be greater than current height %d", curHeight)
+	}
+
+	curTime, err := e.getBlockTime(curHeight)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	bzHeight, err := e.findBlockHeightByTime(curHeight, curTime.Add(-offset))
+	if err != nil {
+		fmt.Println("err", err)
+		return time.Time{}, err
+	}
+
+	range_ := height - curHeight
+	if curHeight-bzHeight < range_ {
+		bzHeight = curHeight - range_
+	}
+
+	bzTime, err := e.getBlockTime(bzHeight)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	btHeight := bzHeight + range_
+	btTime, err := e.getBlockTime(btHeight)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	timeDelta := btTime.Sub(bzTime)
+	estimatedTime := curTime.Add(timeDelta)
+
+	return estimatedTime, nil
+}
+
+func (e *Estimator) findBlockHeightByTime(curHeight int64, targetTime time.Time) (int64, error) {
+	low, high := int64(1), curHeight
+	avgBlockTime, err := e.getAvgBlockDurationNanos()
+	if err != nil {
+		return 0, err
+	}
+
+	var result int64 = -1
+	for low <= high {
+		mid := (low + high) / 2
+		midTime, err := e.getBlockTime(mid)
+		if err != nil {
+			return 0, err
+		}
+
+		if midTime.Before(targetTime) {
+			low = mid + 1
+		} else {
+			// This block is a candidate for the result
+			result = mid
+			high = mid - 1
+		}
+
+		if targetTime.Sub(midTime) > 0 {
+			estBlocks := int64(targetTime.Sub(midTime) / avgBlockTime)
+			if estBlocks > 0 {
+				low = mid + (estBlocks+1)/2
+			} else {
+				low = mid + 1
+			}
+		} else {
+			estBlocks := int64(midTime.Sub(targetTime) / avgBlockTime)
+			if estBlocks > 0 {
+				high = mid - (estBlocks+1)/2
+			} else {
+				high = mid - 1
+			}
+		}
+	}
+
+	if result == -1 {
+		return 0, fmt.Errorf("no block found with time >= target time")
+	}
+
+	for {
+		if result == 1 {
+			break
+		}
+		prevTime, err := e.getBlockTime(result - 1)
+		if err != nil {
+			return 0, err
+		}
+		if prevTime.Before(targetTime) {
+			break
+		}
+		result--
+	}
+
+	return result, nil
+}
