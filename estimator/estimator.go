@@ -245,6 +245,7 @@ func (e *Estimator) findBlockHeightByTime(curHeight int64, targetTime time.Time)
 		return 0, err
 	}
 
+	var result int64 = -1
 	for low <= high {
 		mid := (low + high) / 2
 		midTime, err := e.getBlockTime(mid)
@@ -254,20 +255,46 @@ func (e *Estimator) findBlockHeightByTime(curHeight int64, targetTime time.Time)
 
 		if midTime.Before(targetTime) {
 			low = mid + 1
-		} else if midTime.After(targetTime) {
-			high = mid - 1
 		} else {
-			return mid, nil
+			// This block is a candidate for the result
+			result = mid
+			high = mid - 1
 		}
 
 		if targetTime.Sub(midTime) > 0 {
 			estBlocks := int64(targetTime.Sub(midTime) / avgBlockTime)
-			low = mid + estBlocks/2
+			if estBlocks > 0 {
+				low = mid + (estBlocks+1)/2
+			} else {
+				low = mid + 1
+			}
 		} else {
 			estBlocks := int64(midTime.Sub(targetTime) / avgBlockTime)
-			high = mid - estBlocks/2
+			if estBlocks > 0 {
+				high = mid - (estBlocks+1)/2
+			} else {
+				high = mid - 1
+			}
 		}
 	}
 
-	return low, nil
+	if result == -1 {
+		return 0, fmt.Errorf("no block found with time >= target time")
+	}
+
+	for {
+		if result == 1 {
+			break
+		}
+		prevTime, err := e.getBlockTime(result - 1)
+		if err != nil {
+			return 0, err
+		}
+		if prevTime.Before(targetTime) {
+			break
+		}
+		result--
+	}
+
+	return result, nil
 }
