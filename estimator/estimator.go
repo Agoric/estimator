@@ -195,3 +195,79 @@ func (e *Estimator) CalcDate(height int64) (time.Time, error) {
 
 	return time.Now().Add(gapTime), nil
 }
+
+func (e *Estimator) CalcDateWithOffset(height int64, offset time.Duration) (time.Time, error) {
+	curHeight, err := e.getCurHeight()
+	if err != nil {
+		return time.Time{}, err
+	}
+	if height <= curHeight {
+		return time.Time{}, fmt.Errorf("height to estimate must be greater than current height %d", curHeight)
+	}
+
+	curTime, err := e.getBlockTime(curHeight)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	bzHeight, err := e.findBlockHeightByTime(curHeight, curTime.Add(-offset))
+	if err != nil {
+		fmt.Println("err", err)
+		return time.Time{}, err
+	}
+
+	range_ := height - curHeight
+	if curHeight-bzHeight < range_ {
+		bzHeight = curHeight - range_
+	}
+
+	bzTime, err := e.getBlockTime(bzHeight)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	btHeight := bzHeight + range_
+	btTime, err := e.getBlockTime(btHeight)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	timeDelta := btTime.Sub(bzTime)
+	estimatedTime := curTime.Add(timeDelta)
+
+	return estimatedTime, nil
+}
+
+func (e *Estimator) findBlockHeightByTime(curHeight int64, targetTime time.Time) (int64, error) {
+	low, high := int64(1), curHeight
+	avgBlockTime, err := e.getAvgBlockDurationNanos()
+	if err != nil {
+		return 0, err
+	}
+
+	for low <= high {
+		mid := (low + high) / 2
+		midTime, err := e.getBlockTime(mid)
+		if err != nil {
+			return 0, err
+		}
+
+		if midTime.Before(targetTime) {
+			low = mid + 1
+		} else if midTime.After(targetTime) {
+			high = mid - 1
+		} else {
+			return mid, nil
+		}
+
+		if targetTime.Sub(midTime) > 0 {
+			estBlocks := int64(targetTime.Sub(midTime) / avgBlockTime)
+			low = mid + estBlocks/2
+		} else {
+			estBlocks := int64(midTime.Sub(targetTime) / avgBlockTime)
+			high = mid - estBlocks/2
+		}
+	}
+
+	return low, nil
+}

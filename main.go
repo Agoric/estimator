@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 func run() (exitStatus int, err error) {
 	fHeight := flag.Int64("height", 0, "specific height to estimate the time of")
 	fDate := flag.String("date", "", "specific time to estimate height at, e.g. Mon Jan 2 15:04:05 MST 2006")
+	fOffset := flag.String("offset", "", "date/time offset for height estimation, e.g. 7d")
 	fSamples := flag.Int64("samples", 100, "count of samples to take")
 	fRpc := flag.String("rpc", "https://main.rpc.agoric.net:443", "the rpc endpoint to sample from")
 	fVotingPeriod := flag.Duration("votingPeriod", 24*3*time.Hour, "the voting period of the destination chain")
@@ -47,7 +49,16 @@ func run() (exitStatus int, err error) {
 
 	var timeRemaining time.Duration
 	if *fHeight > 0 {
-		estTime, err := esti.CalcDate(*fHeight)
+		var estTime time.Time
+		if *fOffset != "" {
+			offset, err := parseDuration(*fOffset)
+			if err != nil {
+				return 1, fmt.Errorf("invalid offset: %v", err)
+			}
+			estTime, err = esti.CalcDateWithOffset(*fHeight, offset)
+		} else {
+			estTime, err = esti.CalcDate(*fHeight)
+		}
 		if err != nil {
 			return 1, err
 		}
@@ -97,6 +108,19 @@ func run() (exitStatus int, err error) {
 	}
 
 	return 0, nil
+}
+
+func parseDuration(s string) (time.Duration, error) {
+	if strings.HasSuffix(s, "d") {
+		dayStr := s[:len(s)-1]
+		days, err := strconv.ParseFloat(dayStr, 64)
+		if err != nil {
+			return 0, err
+		}
+		return time.Duration(days * float64(24*time.Hour)), nil
+	}
+
+	return time.ParseDuration(s)
 }
 
 func main() {
