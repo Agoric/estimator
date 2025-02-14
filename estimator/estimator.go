@@ -206,24 +206,26 @@ func (e *Estimator) CalcDateWithOffset(height int64, offset time.Duration) (time
 	}
 
 	curTime, err := e.getBlockTime(curHeight)
+	fmt.Printf("Current Block %d Time: %s\n", curHeight, curTime.Format(time.UnixDate))
+
 	if err != nil {
 		return time.Time{}, err
 	}
 
-	bzHeight, err := e.findBlockHeightByTime(curHeight, curTime.Add(-offset))
+	bzoHeight, bzoTime, err := e.findBlockHeightByTime(curHeight, curTime, curTime.Add(-offset))
 	if err != nil {
 		fmt.Println("err", err)
 		return time.Time{}, err
 	}
 
 	range_ := height - curHeight
+	bzHeight, bzTime := bzoHeight, bzoTime
 	if curHeight-bzHeight < range_ {
 		bzHeight = curHeight - range_
-	}
-
-	bzTime, err := e.getBlockTime(bzHeight)
-	if err != nil {
-		return time.Time{}, err
+		bzTime, err = e.getBlockTime(bzHeight)
+		if err != nil {
+			return time.Time{}, err
+		}
 	}
 
 	btHeight := bzHeight + range_
@@ -232,69 +234,84 @@ func (e *Estimator) CalcDateWithOffset(height int64, offset time.Duration) (time
 		return time.Time{}, err
 	}
 
+	bcpHeight := curHeight - range_
+	bcpTime, err := e.getBlockTime(bcpHeight)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	curAvgDuration := curTime.Sub(bcpTime) / time.Duration(range_)
+	fmt.Printf("Current average block Time: %fs (%d samples before block %d)\n", curAvgDuration.Seconds(), range_, curHeight)
+
+	bzpHeight := bzoHeight - range_
+	bzpTime, err := e.getBlockTime(bzpHeight)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	histAvgDurationBefore := bzoTime.Sub(bzpTime) / time.Duration(range_)
+	fmt.Printf("Historical average block Time: %fs (%d samples before block %d)\n", histAvgDurationBefore.Seconds(), range_, bzoHeight)
+
 	timeDelta := btTime.Sub(bzTime)
-	estimatedTime := curTime.Add(timeDelta)
+	histAvgDurationAfter := timeDelta / time.Duration(range_)
+	fmt.Printf("Historical average block Time: %fs (%d samples after block %d)\n", histAvgDurationAfter.Seconds(), range_, bzHeight)
+
+	adjustedTimeDelta := timeDelta / histAvgDurationBefore * curAvgDuration
+	adjustedEstimatedAvgDuration := adjustedTimeDelta / time.Duration(range_)
+	fmt.Printf("Estimated average block Time: %fs (%d samples after block %d)\n", adjustedEstimatedAvgDuration.Seconds(), range_, curHeight)
+
+	estimatedTime := curTime.Add(adjustedTimeDelta)
 
 	return estimatedTime, nil
 }
 
-func (e *Estimator) findBlockHeightByTime(curHeight int64, targetTime time.Time) (int64, error) {
-	low, high := int64(1), curHeight
-	avgBlockTime, err := e.getAvgBlockDurationNanos()
-	if err != nil {
-		return 0, err
-	}
+func (e *Estimator) findBlockHeightByTime(curHeight int64, curTime time.Time, targetTime time.Time) (int64, time.Time, error) {
+	// start guessing a start point by assuming 7s blocks
+	lowHeight, highHeight := curHeight-int64(curTime.Sub(targetTime)/(7*time.Second)), curHeight
+	highTime := curTime
+	var lowTime time.Time
 
-	var result int64 = -1
-	for low <= high {
-		mid := (low + high) / 2
-		midTime, err := e.getBlockTime(mid)
-		if err != nil {
-			return 0, err
-		}
-
-		if midTime.Before(targetTime) {
-			low = mid + 1
-		} else {
-			// This block is a candidate for the result
-			result = mid
-			high = mid - 1
-		}
-
-		if targetTime.Sub(midTime) > 0 {
-			estBlocks := int64(targetTime.Sub(midTime) / avgBlockTime)
-			if estBlocks > 0 {
-				low = mid + (estBlocks+1)/2
-			} else {
-				low = mid + 1
-			}
-		} else {
-			estBlocks := int64(midTime.Sub(targetTime) / avgBlockTime)
-			if estBlocks > 0 {
-				high = mid - (estBlocks+1)/2
-			} else {
-				high = mid - 1
-			}
-		}
-	}
-
-	if result == -1 {
-		return 0, fmt.Errorf("no block found with time >= target time")
-	}
-
+	// Find low and high surrounding the target time
 	for {
-		if result == 1 {
-			break
-		}
-		prevTime, err := e.getBlockTime(result - 1)
+		fmt.Printf("Updating low and high. Current %d %d\n", lowHeight, highHeight)
+		var err error
+		lowTime, err = e.getBlockTime(lowHeight)
 		if err != nil {
-			return 0, err
+			return 0, time.Time{}, err
 		}
-		if prevTime.Before(targetTime) {
+		if lowTime.Before(targetTime) {
 			break
 		}
-		result--
+		avgDur := highTime.Sub(lowTime) / time.Duration(highHeight-lowHeight)
+		lowHeight, highHeight = lowHeight-int64(lowTime.Sub(targetTime)/avgDur)-1, lowHeight
+		highTime = lowTime
 	}
 
-	return result, nil
+	// Narrow the gap
+	for {
+		blockDelta := highHeight - lowHeight
+		if blockDelta == 1 {
+			return lowHeight, lowTime, nil
+		}
+		avgDur := highTime.Sub(lowTime) / time.Duration(blockDelta)
+		guessedTargetDelta := int64(targetTime.Sub(lowTime) / avgDur)
+		if guessedTargetDelta < 1 {
+			guessedTargetDelta = 1
+		} else if guessedTargetDelta >= blockDelta {
+			guessedTargetDelta = blockDelta - 1
+		}
+		guessedHeight := lowHeight + guessedTargetDelta
+
+		guessedTime, err := e.getBlockTime(guessedHeight)
+		if err != nil {
+			return 0, time.Time{}, err
+		}
+		fmt.Printf("Guessed height %d has time %s.\n", guessedHeight, guessedTime.Format(time.UnixDate))
+
+		if guessedTime.After(targetTime) {
+			highTime, highHeight = guessedTime, guessedHeight
+		} else {
+			lowTime, lowHeight = guessedTime, guessedHeight
+		}
+	}
 }
